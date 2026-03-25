@@ -1,7 +1,7 @@
 """
 ``model.generate`` with ``TurboQuantDynamicCache`` (compressed KV as HF ``Cache``).
 
-Requires: ``pip install turboquant[hf]`` (and with ``--fused`` on GPU — ``pip install turboquant[triton]``).
+Requires: ``pip install turboquant-kv[hf]`` (and with ``--fused`` on GPU — ``pip install turboquant-kv[triton]``).
 
 By default a tiny test model is downloaded from the Hub (~a few MB). Offline / no network:
 
@@ -85,7 +85,7 @@ def main() -> int:
         try:
             from transformers import AutoModelForCausalLM, AutoTokenizer
         except ImportError:
-            print("Install transformers: pip install turboquant[hf]", file=sys.stderr)
+            print("Install transformers: pip install turboquant-kv[hf]", file=sys.stderr)
             return 1
         model = AutoModelForCausalLM.from_pretrained(
             args.model,

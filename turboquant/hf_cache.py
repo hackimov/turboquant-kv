@@ -10,7 +10,7 @@ Sliding-window layers stay ``DynamicSlidingWindowLayer`` (HF, FP).
 ``pack_dense_kv_to_paged`` for our Triton paged API (not a vLLM worker without upstream changes).
 
 Tested against ``transformers`` 5.x (``Cache.update(..., cache_kwargs)``, ``get_mask_sizes(cache_position)``).
-Install: ``pip install turboquant[hf]`` or ``pip install transformers``.
+Install: ``pip install turboquant-kv[hf]`` or ``pip install transformers``.
 """
 
 from __future__ import annotations
@@ -30,7 +30,7 @@ try:
 except ImportError as _e:  # pragma: no cover
     raise ImportError(
         "Module `turboquant.hf_cache` requires `transformers`. "
-        "Install: pip install transformers   or   pip install turboquant[hf]"
+        "Install: pip install transformers   or   pip install turboquant-kv[hf]"
     ) from _e
 
 

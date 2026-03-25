@@ -58,9 +58,19 @@ These figures refer to the **original paper** and its experimental setup; in you
 
 ## Installation
 
+**From PyPI** (distribution name `turboquant-kv`; Python import remains `turboquant`):
+
 ```bash
-git clone https://github.com/hackimov/turboquant.git
-cd turboquant
+pip install turboquant-kv
+pip install "turboquant-kv[triton]"   # GPU: Triton; on Windows pulls triton-windows
+pip install "turboquant-kv[hf]"       # transformers — dynamic cache and HF examples
+```
+
+**From source:**
+
+```bash
+git clone https://github.com/hackimov/turboquant-kv.git
+cd turboquant-kv
 python -m venv .venv
 # Windows: .venv\Scripts\activate
 # Linux/macOS: source .venv/bin/activate

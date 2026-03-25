@@ -16,6 +16,6 @@ except ModuleNotFoundError as e:
     def turboquant_attention(*args, **kwargs):
         raise ModuleNotFoundError(
             "turboquant.kernels.turboquant_attention requires Triton. "
-            "On Windows: pip install triton-windows (or pip install turboquant[triton]). "
-            "On Linux: pip install triton (or pip install turboquant[triton])."
+            "On Windows: pip install triton-windows (or pip install turboquant-kv[triton]). "
+            "On Linux: pip install triton (or pip install turboquant-kv[triton])."
         )

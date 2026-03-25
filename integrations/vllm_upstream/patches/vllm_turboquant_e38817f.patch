@@ -26,7 +26,7 @@ index 8a9eb48..e20d43a 100644
 +        if cache_dtype == "turboquant":
 +            logger.info(
 +                "Using TurboQuant packed KV cache; install the optional "
-+                "dependency: pip install 'turboquant[triton]'."
++                "dependency: pip install 'turboquant-kv[triton]'."
 +            )
          return cache_dtype
 diff --git a/vllm/engine/arg_utils.py b/vllm/engine/arg_utils.py
@@ -165,7 +165,7 @@ index 0000000..1cfbc64
 +# SPDX-License-Identifier: Apache-2.0
 +# SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 +#
-+# TurboQuant compressed KV + Triton fused decode (optional dependency: ``turboquant[triton]``).
++# TurboQuant compressed KV + Triton fused decode (optional dependency: ``turboquant-kv[triton]``).
 +# Copy this file into upstream vLLM at the same path, then apply ``UPSTREAM_EDITS.md``.
 +
 +from __future__ import annotations

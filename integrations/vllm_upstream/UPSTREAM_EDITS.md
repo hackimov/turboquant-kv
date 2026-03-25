@@ -17,7 +17,7 @@ turboquant_bits: int = Field(default=3, ge=2, le=4)
 """Bit width for TurboQuant KV when ``cache_dtype == \"turboquant\"`` (paper-style 2–4)."""
 ```
 
-**`@field_validator("cache_dtype", ...)`** (existing `_validate_cache_dtype`): if `cache_dtype == "turboquant"`, log once that TurboQuant needs `pip install 'turboquant[triton]'`.
+**`@field_validator("cache_dtype", ...)`** (existing `_validate_cache_dtype`): if `cache_dtype == "turboquant"`, log once that TurboQuant needs `pip install 'turboquant-kv[triton]'`.
 
 ---
 
@@ -108,7 +108,7 @@ Add `vllm/v1/attention/backends/turboquant_attn.py` — copy from [`overlay/vllm
 
 ## 10. Optional: docs / packaging
 
-- Document optional dependency on `turboquant[triton]`.
+- Document optional dependency on `turboquant-kv[triton]`.
 - Note unsupported combinations (MLA, sinks, KV sharing, non-CUDA platforms).
 
 ---
@@ -116,7 +116,7 @@ Add `vllm/v1/attention/backends/turboquant_attn.py` — copy from [`overlay/vllm
 ## Verification
 
 ```bash
-pip install "turboquant[triton]" -e ./vllm
+pip install "turboquant-kv[triton]" -e ./vllm
 python -c "from vllm.v1.attention.backends.turboquant_attn import TurboQuantAttentionBackend; print(TurboQuantAttentionBackend.get_name())"
 ```
 

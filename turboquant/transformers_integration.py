@@ -6,7 +6,7 @@ Optional integration helpers for Hugging Face ``transformers`` (KV cache) and no
   ``TurboQuantModel.make_dynamic_cache()`` → ``TurboQuantDynamicCache`` with compressed non-sliding layers;
   paged export: ``export_cache_to_paged_per_layer`` in ``turboquant.hf_cache``.
 
-Requires ``pip install transformers`` (or ``turboquant[hf]``) for the cache path; importing ``turboquant.hf_cache``
+Requires ``pip install transformers`` (or ``turboquant-kv[hf]``) for the cache path; importing ``turboquant.hf_cache``
 pulls in ``transformers``.
 """
 

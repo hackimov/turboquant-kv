@@ -51,7 +51,7 @@ def _tiny_llama_model(device: str):
     return model
 
 
-@unittest.skipUnless(_have_transformers(), "requires transformers (pip install turboquant[hf])")
+@unittest.skipUnless(_have_transformers(), "requires transformers (pip install turboquant-kv[hf])")
 class TestHFLlamaTurboQuantSmoke(unittest.TestCase):
     def test_prefill_decode_dynamic_cache_cpu(self):
         device = "cpu"

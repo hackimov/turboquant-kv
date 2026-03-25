@@ -10,13 +10,13 @@ End-to-end wiring for **vLLM v1** with packed TurboQuant KV pages and Triton fus
 ## Requirements
 
 - GPU with Triton support (same class of devices as the rest of TurboQuant CUDA paths)
-- `pip install turboquant[triton]` in the **same** environment as vLLM
+- `pip install turboquant-kv[triton]` in the **same** environment as vLLM
 - Models with **decoder** attention, **no sliding window**, **no sinks**, **no KV sharing**, **no MLA**, `head_size` in `{16,32,64,128,256}`, and `head_size_v == head_size`
 
 ## Install (recommended: git patch)
 
 1. Clone [vLLM](https://github.com/vllm-project/vllm) and check out a revision close to patch base commit **`e38817f`** (vLLM `main` when [`patches/vllm_turboquant_e38817f.patch`](patches/vllm_turboquant_e38817f.patch) was generated). From the vLLM repo root you can `git apply` that file; the script below is recommended.
-2. From the **turboquant** repo:
+2. From the **turboquant-kv** repo:
 
    ```bash
    python integrations/vllm_upstream/apply_to_vllm.py /path/to/vllm
@@ -24,7 +24,7 @@ End-to-end wiring for **vLLM v1** with packed TurboQuant KV pages and Triton fus
 
    Dry-run: add `--check`. If hunks fail on a newer main, try `--3way`.
 
-3. `pip install turboquant[triton]` then install vLLM in editable mode, e.g. `pip install -e ./vllm`.
+3. `pip install turboquant-kv[triton]` then install vLLM in editable mode, e.g. `pip install -e ./vllm`.
 4. Smoke:
 
    ```bash
@@ -51,6 +51,6 @@ If the patch does not apply, use [`UPSTREAM_EDITS.md`](UPSTREAM_EDITS.md) as a c
 ## Upstream PR checklist
 
 1. Apache-2.0 headers on new files (already in `turboquant_attn.py`).
-2. Optional dependency: document `turboquant[triton]` in vLLM docs or extras.
+2. Optional dependency: document `turboquant-kv[triton]` in vLLM docs or extras.
 3. CI: smoke test gated on CUDA + optional import (pattern used for other Triton backends).
 4. Keep `TurboQuantAttentionSpec` and worker `ZeroBlockIds` / `init_meta` handling in sync (`type(spec) is TurboQuantAttentionSpec` branch in `vllm/v1/worker/utils.py`).

@@ -15,10 +15,14 @@ def _read_version() -> str:
 __version__ = _read_version()
 
 setup(
-    name="turboquant",
+    name="turboquant-kv",
     version=__version__,
     description="Open-source implementation of Google TurboQuant for extreme KV-cache compression",
     author="hackimov + Grok (xAI)",
+    url="https://github.com/hackimov/turboquant-kv",
+    project_urls={
+        "Source": "https://github.com/hackimov/turboquant-kv",
+    },
     packages=find_packages(),
     install_requires=[
         "torch>=2.0.0",

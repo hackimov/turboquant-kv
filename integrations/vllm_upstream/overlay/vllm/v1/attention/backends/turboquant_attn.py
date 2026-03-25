@@ -1,7 +1,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-FileCopyrightText: Copyright contributors to the vLLM project
 #
-# TurboQuant compressed KV + Triton fused decode (optional dependency: ``turboquant[triton]``).
+# TurboQuant compressed KV + Triton fused decode (optional dependency: ``turboquant-kv[triton]``).
 # Copy this file into upstream vLLM at the same path, then apply ``UPSTREAM_EDITS.md``.
 
 from __future__ import annotations
