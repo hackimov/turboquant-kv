@@ -42,12 +42,20 @@ The [Google Research blog](https://research.google/blog/turboquant-redefining-ai
 - Compress / restore K/V pairs: **`compress` / `decompress`**, **`quantize_kv`** (including returning the compressed representation).
 - Optional **calibration** from batches/tensors: **`calibrate_turboquant_from_tensor`**, **`calibrate_turboquant_from_batches`**, **`CalibrationMode`** (see `turboquant.calibration`).
 
-### GPU: Triton (extra `[triton]`, CUDA)
+### GPU paths
+
+#### Triton (extra `[triton]`, CUDA)
 
 - **Scores from compressed K:** **`quantized_attention_scores_triton`** — `q @ k^T / sqrt(d)` without fully materializing unpacked K; causal mask, additive mask, **GQA/MQA** (`num_kv_heads`).
 - **Fused attention (softmax × V)** on compressed K/V: **`quantized_attention_fused_triton`**; supported **`head_dim`**: 16, 32, 64, 128, 256.
 - **Paged KV** in the vLLM style: **`quantized_attention_fused_triton_paged`**, packing **`pack_dense_kv_to_paged`**; zeroing allocator copies — **`turboquant.vllm_pack`** (`paged_kv_views_from_allocator_buffer`, `uint8_pages_to_paged_dict`).
 - Centroid preload: **`TurboQuantProd.preload_centroids(...)`** (useful on first run for `bits >= 4`).
+
+#### Apple Silicon / Metal (MPS)
+
+- Fused decode path without Triton: **`quantized_attention_fused_auto`** uses portable SDPA fallback on MPS.
+- Works with decoder fused wrappers in HF integration as a non-Triton backend (`enable_decoder_fused_attention`).
+- `TurboQuantProd(device="mps")` is supported; aliases `device="metal"` and `device="mlx"` map to MPS.
 
 ### Hugging Face Transformers (extra `[hf]`)
 
@@ -75,7 +83,7 @@ The [Google Research blog](https://research.google/blog/turboquant-redefining-ai
 ## ⚠️ Important notes
 
 1. **High MSE between original and reconstructed K/V is expected.** The method optimizes **dot products** (attention logits), not exact L2 reconstruction; judge quality by **score distortion** (see `examples/simple_usage.py`).
-2. **Without the fused path**, standard HF attention after a cache update may need to **dequant the entire prefix** to float K/V — cost **grows with context length**. To lower per-step cost, use **CUDA + Triton** and fused (`examples/hf_generate_turboquant_cache.py --fused`, `turboquant/hf_fused_attention.py`).
+2. **Without fused backend**, standard HF attention after a cache update may need to **dequant the entire prefix** to float K/V — cost **grows with context length**. To lower per-step cost, use fused backends: **CUDA + Triton** or **Apple Metal (MPS fallback path)** (`examples/hf_generate_turboquant_cache.py --fused`, `turboquant/hf_fused_attention.py`).
 3. For **Gemma2**, set head size from **`config.head_dim`**, not only `hidden_size // num_attention_heads`.
 4. Not every setup is covered by the fused layer (sliding-window / MLA / some masks, etc.) — see **`turboquant/hf_fused_attention.py`** and the integration READMEs.
 
@@ -155,14 +163,18 @@ python examples/hf_generate_turboquant_cache.py
 python examples/hf_generate_turboquant_cache.py --from-config   # no Hub weight download
 ```
 
-**Fused attention (CUDA + Triton)** — also `pip install -e ".[triton]"`:
+**Fused attention (auto backend)**:
 
 ```bash
+# CUDA + Triton path (recommended on NVIDIA):
+pip install -e ".[triton]"
 python examples/hf_generate_turboquant_cache.py --fused
 python examples/hf_generate_turboquant_cache.py --fused --fused-arch mistral
 # if attention type is a subclass of a registered implementation:
 python examples/hf_generate_turboquant_cache.py --fused --allow-attention-subclass
 ```
+
+On Apple Silicon, the same `--fused` flag uses the Metal/MPS fallback path automatically (no Triton required).
 
 The script also supports **`--bits`**, **`--strict-reencode`**, **`--hybrid-float-cache`** — see `python examples/hf_generate_turboquant_cache.py -h`.
 

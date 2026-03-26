@@ -122,8 +122,8 @@ class TurboQuantModel:
 
         Set ``triton_fused_layers=True`` for :class:`TurboQuantTritonFusedCacheLayer`, then call
         ``enable_llama_fused_attention()`` to replace ``LlamaAttention`` modules with
-        :class:`~turboquant.hf_llama_fused.TurboQuantLlamaAttention` (no monkey-patch; CUDA + Triton required
-        for the fused path).
+        :class:`~turboquant.hf_llama_fused.TurboQuantLlamaAttention` (no monkey-patch; Triton on CUDA,
+        or SDPA fallback on Apple Metal/MPS for the fused path).
 
         Set ``hybrid_float_cache=True`` to skip full-sequence decompress on each ``update`` on the
         non-strict path (see :class:`~turboquant.hf_cache.TurboQuantCacheLayer`).

@@ -7,6 +7,7 @@ from typing import Dict, List, Literal, Optional, Tuple, Callable, Any, Iterable
 import warnings
 
 import torch
+import torch.nn.functional as F
 
 CodebookKind = Literal["paper", "ternary"]
 
@@ -105,11 +106,22 @@ class TurboQuantProd:
             raise ValueError('codebook must be "paper" or "ternary"')
         self.codebook: CodebookKind = codebook
         if device is None:
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
+            if torch.cuda.is_available():
+                self.device = "cuda"
+            elif torch.backends.mps.is_available():
+                self.device = "mps"
+            else:
+                self.device = "cpu"
         else:
-            self.device = device
+            dev_s = str(device).lower()
+            if dev_s in ("metal", "mlx"):
+                dev_s = "mps"
+            self.device = dev_s
         if "cuda" in str(self.device).lower() and not torch.cuda.is_available():
             warnings.warn("CUDA is not available; falling back device to 'cpu'.")
+            self.device = "cpu"
+        if str(self.device).lower() == "mps" and not torch.backends.mps.is_available():
+            warnings.warn("MPS/Metal is not available; falling back device to 'cpu'.")
             self.device = "cpu"
         self.dtype = dtype
 
@@ -130,7 +142,7 @@ class TurboQuantProd:
         # Make Π and S deterministic when seed is provided (ignored if Pi/S passed in).
         if not use_fixed and seed is not None:
             torch.manual_seed(seed)
-            if "cuda" in str(device).lower() and torch.cuda.is_available():
+            if "cuda" in str(self.device).lower() and torch.cuda.is_available():
                 torch.cuda.manual_seed_all(seed)
 
         # Algorithm 2: total bit-width is b; MSE stage uses (b-1) bits.
@@ -784,6 +796,129 @@ class TurboQuantProd:
                 causal=causal,
                 attention_mask=attention_mask,
             )
+
+    def quantized_attention_fused_torch(
+        self,
+        q: torch.Tensor,
+        kv_dict: Dict[str, torch.Tensor],
+        *,
+        num_kv_heads: Optional[int] = None,
+        causal: bool = False,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Portable fused attention path (CUDA/CPU/MPS) via dequantized KV + SDPA.
+
+        This path exists primarily for backends where Triton is unavailable (for example Apple Metal/MPS).
+        """
+        if q.ndim != 4:
+            raise ValueError("q must have shape [B, H, M, head_dim]")
+        if q.shape[-1] != self.head_dim:
+            raise ValueError(f"q last dim must be head_dim={self.head_dim}")
+        required = ("k_idx", "k_norm", "k_sign", "k_gamma", "v_idx", "v_norm", "v_sign", "v_gamma")
+        if any(k not in kv_dict for k in required):
+            raise ValueError(f"kv_dict must include {required}")
+
+        with torch.no_grad():
+            k, v = self.decompress(kv_dict)
+            dev = q.device
+            qf = q.to(device=dev, dtype=torch.float32)
+            kf = k.to(device=dev, dtype=torch.float32)
+            vf = v.to(device=dev, dtype=torch.float32)
+
+            B, H, M, _ = qf.shape
+            H_kv = int(kf.shape[1])
+            N = int(kf.shape[2])
+            expected_h_kv = int(num_kv_heads) if num_kv_heads is not None else H
+            if H_kv != expected_h_kv:
+                raise ValueError(f"KV heads mismatch: got {H_kv}, expected num_kv_heads={expected_h_kv}")
+            if H % H_kv != 0:
+                raise ValueError(f"num query heads ({H}) must be divisible by num_kv_heads ({H_kv})")
+            if H_kv != H:
+                rep = H // H_kv
+                kf = kf.repeat_interleave(rep, dim=1)
+                vf = vf.repeat_interleave(rep, dim=1)
+
+            mask_t: Optional[torch.Tensor] = None
+            if attention_mask is not None:
+                from .kernels.attention_mask import broadcast_additive_attn_mask
+
+                mask_t = broadcast_additive_attn_mask(attention_mask, B, H, M, N, device=dev)
+            if causal:
+                ar_m = torch.arange(M, device=dev, dtype=torch.long).view(1, 1, M, 1)
+                ar_n = torch.arange(N, device=dev, dtype=torch.long).view(1, 1, 1, N)
+                c_mask = torch.where(
+                    ar_n <= ar_m,
+                    torch.zeros((), device=dev, dtype=torch.float32),
+                    torch.full((), float("-inf"), device=dev, dtype=torch.float32),
+                )
+                mask_t = c_mask if mask_t is None else (mask_t + c_mask)
+
+            out = F.scaled_dot_product_attention(
+                qf,
+                kf,
+                vf,
+                attn_mask=mask_t,
+                dropout_p=0.0,
+                is_causal=False,
+            )
+            return out.to(torch.float32)
+
+    def quantized_attention_fused_metal(
+        self,
+        q: torch.Tensor,
+        kv_dict: Dict[str, torch.Tensor],
+        *,
+        num_kv_heads: Optional[int] = None,
+        causal: bool = False,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Apple Metal path (MPS) for fused attention.
+        """
+        if q.device.type != "mps":
+            raise ValueError("quantized_attention_fused_metal expects q on an MPS device")
+        return self.quantized_attention_fused_torch(
+            q,
+            kv_dict,
+            num_kv_heads=num_kv_heads,
+            causal=causal,
+            attention_mask=attention_mask,
+        )
+
+    def quantized_attention_fused_auto(
+        self,
+        q: torch.Tensor,
+        kv_dict: Dict[str, torch.Tensor],
+        *,
+        num_kv_heads: Optional[int] = None,
+        causal: bool = False,
+        attention_mask: Optional[torch.Tensor] = None,
+    ) -> torch.Tensor:
+        """
+        Select fused attention backend automatically:
+        - Triton on CUDA when available;
+        - fallback SDPA path otherwise (including Apple Metal/MPS).
+        """
+        if q.is_cuda:
+            try:
+                return self.quantized_attention_fused_triton(
+                    q,
+                    kv_dict,
+                    num_kv_heads=num_kv_heads,
+                    causal=causal,
+                    attention_mask=attention_mask,
+                )
+            except ModuleNotFoundError as e:
+                if e.name != "triton":
+                    raise
+        return self.quantized_attention_fused_torch(
+            q,
+            kv_dict,
+            num_kv_heads=num_kv_heads,
+            causal=causal,
+            attention_mask=attention_mask,
+        )
 
     def quantized_attention_fused_triton_paged(
         self,

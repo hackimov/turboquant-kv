@@ -1,5 +1,5 @@
 """
-Multi-architecture **decoder** attention with Triton fused path on :class:`TurboQuantTritonFusedCacheLayer`.
+Multi-architecture **decoder** attention with fused compressed-KV path on :class:`TurboQuantTritonFusedCacheLayer`.
 
 **Parity with HF eager** (within TurboQuant score approximation) when all of the following hold:
 
@@ -10,7 +10,8 @@ Multi-architecture **decoder** attention with Triton fused path on :class:`Turbo
   ``attn_logit_softcapping``), this module **automatically** uses the stock ``forward`` so results match HF.
 - Dense additive ``attention_mask`` (see module doc in earlier paragraphs); flex / ``BlockMask`` → stock ``forward``.
 - ``TurboQuantTritonFusedCacheLayer`` on that layer (``turboquant_dynamic_cache(..., triton_fused_layers=True)`` and
-  a **full_attention** cache slot — sliding-window HF layers stay stock).
+  a **full_attention** cache slot — sliding-window HF layers stay stock). Backend: Triton on CUDA, SDPA fallback
+  on Apple Metal (MPS).
 
 **Not** covered in fused form for **generic** wrappers (use stock attention + quant cache or extend upstream): fused QKV without a dedicated path (e.g. GPT-NeoX). **Phi-4 Multimodal** text attention uses fused QKV but has a **dedicated** TurboQuant wrapper (``phi4_multimodal``).
 query/key head RMSNorms beyond the Qwen3-style path (e.g. Olmo2), MoE routing, native sliding-window **compressed** KV.
@@ -34,6 +35,11 @@ from .kernels.attention_mask import broadcast_additive_attn_mask
 
 def triton_cuda_available() -> bool:
     return importlib.util.find_spec("triton") is not None and torch.cuda.is_available()
+
+
+def fused_attention_backend_available(hidden_states: torch.Tensor) -> bool:
+    # Triton fused kernels on CUDA, or SDPA fallback path on Apple Metal (MPS).
+    return (hidden_states.is_cuda and triton_cuda_available()) or (hidden_states.device.type == "mps")
 
 
 def _inner_decoder_stack(model: nn.Module) -> nn.Module:
@@ -135,12 +141,11 @@ def _turboquant_fused_attention_forward(
 
     can_fused = (
         quantizer is not None
-        and triton_cuda_available()
+        and fused_attention_backend_available(hidden_states)
         and past_key_values is not None
         and self.layer_idx < len(past_key_values.layers)
         and isinstance(past_key_values.layers[self.layer_idx], TurboQuantTritonFusedCacheLayer)
         and int(quantizer.head_dim) == int(self.head_dim)
-        and hidden_states.is_cuda
     )
 
     if not can_fused:
@@ -226,7 +231,7 @@ def _turboquant_fused_attention_forward(
             f"(got seq {0 if kv is None else kv['k_idx'].shape[2]}, expected {N_expected})."
         )
 
-    attn_out = quantizer.quantized_attention_fused_triton(
+    attn_out = quantizer.quantized_attention_fused_auto(
         query_states,
         kv,
         num_kv_heads=int(self.config.num_key_value_heads),
@@ -271,13 +276,12 @@ def _turboquant_phi4_multimodal_attention_forward(
 
     can_fused = (
         quantizer is not None
-        and triton_cuda_available()
+        and fused_attention_backend_available(hidden_states)
         and past_key_values is not None
         and getattr(self, "layer_idx", None) is not None
         and int(self.layer_idx) < len(past_key_values.layers)
         and isinstance(past_key_values.layers[int(self.layer_idx)], TurboQuantTritonFusedCacheLayer)
         and int(quantizer.head_dim) == int(self.head_dim)
-        and hidden_states.is_cuda
     )
 
     if not can_fused:
@@ -360,7 +364,7 @@ def _turboquant_phi4_multimodal_attention_forward(
             f"(got seq {0 if kv is None else kv['k_idx'].shape[2]}, expected {N_expected})."
         )
 
-    attn_out = quantizer.quantized_attention_fused_triton(
+    attn_out = quantizer.quantized_attention_fused_auto(
         query_states,
         kv,
         num_kv_heads=int(self.config.num_key_value_heads),

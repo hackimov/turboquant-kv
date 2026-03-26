@@ -24,7 +24,7 @@ from .hf_fused_attention import (
     _inner_decoder_stack,
     _resolve_fused_additive_mask,
     _resolve_registered_attention_base,
-    triton_cuda_available,
+    fused_attention_backend_available,
 )
 
 # Wrapper types created for Hub modules (uninstall must recognize them).
@@ -68,13 +68,12 @@ def _turboquant_internlm2_attention_forward(
 
     can_fused = (
         quantizer is not None
-        and triton_cuda_available()
+        and fused_attention_backend_available(hidden_states)
         and past_key_value is not None
         and self.layer_idx is not None
         and int(self.layer_idx) < len(past_key_value.layers)
         and isinstance(past_key_value.layers[int(self.layer_idx)], TurboQuantTritonFusedCacheLayer)
         and int(quantizer.head_dim) == int(self.head_dim)
-        and hidden_states.is_cuda
     )
 
     if not can_fused:
@@ -162,7 +161,7 @@ def _turboquant_internlm2_attention_forward(
             f"(got seq {0 if kv is None else kv['k_idx'].shape[2]}, expected {N_expected})."
         )
 
-    attn_out = quantizer.quantized_attention_fused_triton(
+    attn_out = quantizer.quantized_attention_fused_auto(
         query_states,
         kv,
         num_kv_heads=int(self.config.num_key_value_heads),
