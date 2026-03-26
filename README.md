@@ -1,4 +1,4 @@
-# ⚡ TurboQuant — Extreme KV Cache Quantization
+# TurboQuant — Extreme KV Cache Quantization
 
 <div align="center">
 
