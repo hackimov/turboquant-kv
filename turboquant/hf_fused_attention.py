@@ -138,6 +138,7 @@ def _turboquant_fused_attention_forward(
     **kwargs: Any,
 ) -> Tuple[torch.Tensor, Any]:
     quantizer: Optional[TurboQuantProd] = getattr(self, "_turboquant_quantizer", None)
+    head_dim = int(getattr(self, "head_dim", -1))
 
     can_fused = (
         quantizer is not None
@@ -145,7 +146,8 @@ def _turboquant_fused_attention_forward(
         and past_key_values is not None
         and self.layer_idx < len(past_key_values.layers)
         and isinstance(past_key_values.layers[self.layer_idx], TurboQuantTritonFusedCacheLayer)
-        and int(quantizer.head_dim) == int(self.head_dim)
+        and head_dim > 0
+        and int(quantizer.head_dim) == head_dim
     )
 
     if not can_fused:
@@ -414,7 +416,14 @@ def _make_wrapper(
                 cp: Optional[torch.LongTensor] = None,
                 **kw: Any,
             ) -> Any:
-                return super(_W, self).forward(hs, pe, am, pk, cp, **kw)
+                return super(_W, self).forward(
+                    hidden_states=hs,
+                    position_embeddings=pe,
+                    attention_mask=am,
+                    past_key_values=pk,
+                    cache_position=cp,
+                    **kw,
+                )
 
             return _turboquant_fused_attention_forward(
                 self,
@@ -487,13 +496,20 @@ def _load_registry() -> Tuple[Dict[Type[nn.Module], Type[nn.Module]], Dict[str, 
     aliases: Dict[str, Type[nn.Module]] = {}
     wrappers: List[Type[nn.Module]] = []
 
-    def _add(alias: str, base_mod: str, base_cls: str, rope_mod: str, wrap_name: str) -> None:
+    def _add(
+        alias: str,
+        base_mod: str,
+        base_cls: str,
+        rope_mod: str,
+        wrap_name: str,
+        apply_rotary_name: str = "apply_rotary_pos_emb",
+    ) -> None:
         try:
             bmod = __import__(base_mod, fromlist=[base_cls])
             Base = getattr(bmod, base_cls)
         except (ImportError, AttributeError):
             return
-        Wrap = _make_wrapper(Base, rope_mod, class_name=wrap_name)
+        Wrap = _make_wrapper(Base, rope_mod, apply_rotary_name=apply_rotary_name, class_name=wrap_name)
         reg[Base] = Wrap
         aliases[alias] = Base
         wrappers.append(Wrap)
@@ -502,6 +518,15 @@ def _load_registry() -> Tuple[Dict[Type[nn.Module], Type[nn.Module]], Dict[str, 
     _add("mistral", "transformers.models.mistral.modeling_mistral", "MistralAttention", "transformers.models.mistral.modeling_mistral", "TurboQuantMistralAttention")
     _add("qwen2", "transformers.models.qwen2.modeling_qwen2", "Qwen2Attention", "transformers.models.qwen2.modeling_qwen2", "TurboQuantQwen2Attention")
     _add("qwen3", "transformers.models.qwen3.modeling_qwen3", "Qwen3Attention", "transformers.models.qwen3.modeling_qwen3", "TurboQuantQwen3Attention")
+    _add(
+        "deepseek_v2",
+        "transformers.models.deepseek_v2.modeling_deepseek_v2",
+        "DeepseekV2Attention",
+        "transformers.models.deepseek_v2.modeling_deepseek_v2",
+        "TurboQuantDeepseekV2Attention",
+        apply_rotary_name="apply_rotary_emb",
+    )
+    _add("deepseek_v3", "transformers.models.deepseek_v3.modeling_deepseek_v3", "DeepseekV3Attention", "transformers.models.deepseek_v3.modeling_deepseek_v3", "TurboQuantDeepseekV3Attention")
     _add("gemma2", "transformers.models.gemma2.modeling_gemma2", "Gemma2Attention", "transformers.models.gemma2.modeling_gemma2", "TurboQuantGemma2Attention")
     _add("phi3", "transformers.models.phi3.modeling_phi3", "Phi3Attention", "transformers.models.phi3.modeling_phi3", "TurboQuantPhi3Attention")
     _add("cohere", "transformers.models.cohere.modeling_cohere", "CohereAttention", "transformers.models.cohere.modeling_cohere", "TurboQuantCohereAttention")
@@ -517,6 +542,11 @@ def _load_registry() -> Tuple[Dict[Type[nn.Module], Type[nn.Module]], Dict[str, 
     # Phi-4 / Phi-4-mini (Microsoft Hub) use ``Phi3Attention`` and ``model_type="phi3"``; explicit ``phi4`` alias.
     if "phi3" in aliases:
         aliases["phi4"] = aliases["phi3"]
+    if "deepseek_v3" in aliases:
+        aliases["deepseek"] = aliases["deepseek_v3"]
+        aliases["deepseek_r2"] = aliases["deepseek_v3"]
+    if "deepseek_v2" in aliases and "deepseek_r1" not in aliases:
+        aliases["deepseek_r1"] = aliases["deepseek_v2"]
 
     def _add_phi4_multimodal() -> None:
         try:
@@ -561,6 +591,8 @@ def supported_fused_attention_architectures() -> List[str]:
 
     ``phi4`` is an alias for the same HF base as ``phi3`` (Phi-4 / Phi-4-mini use ``Phi3Attention``).
     ``phi4_multimodal`` is **Phi-4 Multimodal** text attention (``Phi4MultimodalAttention``, fused QKV).
+    ``deepseek_v2`` / ``deepseek_v3`` are DeepSeek MLA attention classes
+    (aliases: ``deepseek``/``deepseek_r2`` -> v3, ``deepseek_r1`` -> v2).
     ``internlm2`` / ``internlm3`` use Hub remote-code modules (see ``turboquant.hf_internlm_fused``).
     """
     _, aliases, _ = _get_registry()
@@ -718,6 +750,7 @@ uninstall_decoder_fused_attention = uninstall_turboquant_fused_attention
 def _export_attention_classes() -> None:
     """Populate module-level ``TurboQuant*Attention`` classes from the registry."""
     global TurboQuantLlamaAttention, TurboQuantMistralAttention, TurboQuantQwen2Attention, TurboQuantQwen3Attention
+    global TurboQuantDeepseekV2Attention, TurboQuantDeepseekV3Attention
     global TurboQuantGemma2Attention, TurboQuantPhi3Attention, TurboQuantPhi4Attention
     global TurboQuantPhi4MultimodalAttention, TurboQuantCohereAttention
     global TurboQuantGraniteAttention, TurboQuantStarcoder2Attention
@@ -728,6 +761,8 @@ def _export_attention_classes() -> None:
         ("TurboQuantMistralAttention", "transformers.models.mistral.modeling_mistral", "MistralAttention"),
         ("TurboQuantQwen2Attention", "transformers.models.qwen2.modeling_qwen2", "Qwen2Attention"),
         ("TurboQuantQwen3Attention", "transformers.models.qwen3.modeling_qwen3", "Qwen3Attention"),
+        ("TurboQuantDeepseekV2Attention", "transformers.models.deepseek_v2.modeling_deepseek_v2", "DeepseekV2Attention"),
+        ("TurboQuantDeepseekV3Attention", "transformers.models.deepseek_v3.modeling_deepseek_v3", "DeepseekV3Attention"),
         ("TurboQuantGemma2Attention", "transformers.models.gemma2.modeling_gemma2", "Gemma2Attention"),
         ("TurboQuantPhi3Attention", "transformers.models.phi3.modeling_phi3", "Phi3Attention"),
         ("TurboQuantPhi4Attention", "transformers.models.phi3.modeling_phi3", "Phi3Attention"),
@@ -750,6 +785,8 @@ TurboQuantLlamaAttention = None  # type: ignore[misc, assignment]
 TurboQuantMistralAttention = None  # type: ignore[misc, assignment]
 TurboQuantQwen2Attention = None  # type: ignore[misc, assignment]
 TurboQuantQwen3Attention = None  # type: ignore[misc, assignment]
+TurboQuantDeepseekV2Attention = None  # type: ignore[misc, assignment]
+TurboQuantDeepseekV3Attention = None  # type: ignore[misc, assignment]
 TurboQuantGemma2Attention = None  # type: ignore[misc, assignment]
 TurboQuantPhi3Attention = None  # type: ignore[misc, assignment]
 TurboQuantPhi4Attention = None  # type: ignore[misc, assignment]

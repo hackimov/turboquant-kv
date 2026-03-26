@@ -10,6 +10,8 @@ import unittest
 class TestHFFusedRegistry(unittest.TestCase):
     def test_phi4_alias_registered(self):
         from turboquant.hf_fused_attention import (
+            TurboQuantDeepseekV2Attention,
+            TurboQuantDeepseekV3Attention,
             TurboQuantPhi3Attention,
             TurboQuantPhi4Attention,
             TurboQuantPhi4MultimodalAttention,
@@ -22,9 +24,16 @@ class TestHFFusedRegistry(unittest.TestCase):
         self.assertIn("phi4_multimodal", names)
         self.assertIn("internlm2", names)
         self.assertIn("internlm3", names)
+        self.assertIn("deepseek_v2", names)
+        self.assertIn("deepseek_v3", names)
+        self.assertIn("deepseek", names)
+        self.assertIn("deepseek_r1", names)
+        self.assertIn("deepseek_r2", names)
         # Same wrapper class: Hub Phi-4 / Phi-4-mini use Phi3Attention.
         self.assertIs(TurboQuantPhi4Attention, TurboQuantPhi3Attention)
         self.assertIsNotNone(TurboQuantPhi4MultimodalAttention)
+        self.assertIsNotNone(TurboQuantDeepseekV2Attention)
+        self.assertIsNotNone(TurboQuantDeepseekV3Attention)
 
 
 if __name__ == "__main__":
